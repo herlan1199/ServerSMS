@@ -44,8 +44,7 @@ io.on('connection', (socket) => {
             if (result.rows.length > 0) {
                 userId = result.rows[0].id;
             } else {
-                // SOLUCIÓN AL ERROR: Insertamos tanto 'username' como 'full_name' 
-                // para evitar violar la restricción NOT NULL de la base de datos.
+                // Insertamos tanto 'username' como 'full_name' para evitar violar la restricción NOT NULL
                 const insertQuery = "INSERT INTO users (username, full_name) VALUES ($1, $2) RETURNING id";
                 const newResult = await db.query(insertQuery, [username, username]);
                 userId = newResult.rows[0].id;
@@ -65,11 +64,14 @@ io.on('connection', (socket) => {
 
         } catch (error) {
             console.error("❌ Error en el login con username:", error);
+            // 🛠️ CORRECCIÓN: Notificar al cliente que ocurrió un error para que la app no se quede cargando infinitamente
+            socket.emit('login_error', { message: "Error interno en el servidor o base de datos" });
         }
     });
 
     // Registro alternativo por ID directo (por si se utiliza en otra parte de la app)
     socket.on('register_user', (userId) => {
+        if (!userId) return;
         const userIdStr = userId.toString();
         onlineUsers.set(userIdStr, socket.id);
         console.log(`👤 Usuario registrado como Online: ID ${userIdStr}`);
