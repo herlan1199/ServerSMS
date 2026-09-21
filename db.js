@@ -1,9 +1,10 @@
 const { Pool } = require('pg');
 
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_RjZUaWqb0tz4@ep-small-field-b4db0i6v-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require',
+    // Añadimos 'uselibpqcompat=true' para silenciar la advertencia y mantener compatibilidad
+    connectionString: process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_RjZUaWqb0tz4@ep-small-field-b4db0i6v-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require&uselibpqcompat=true',
     ssl: {
-        rejectUnauthorized: false // Requerido para conexiones seguras en la nube (Neon/Render)
+        rejectUnauthorized: false
     }
 });
 
