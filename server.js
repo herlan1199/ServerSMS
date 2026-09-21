@@ -99,7 +99,7 @@ app.get('/api/search', async (req, res) => {
     }
 });
 
-// 3. Obtener info, sinopsis y lista de episodios de un anime
+// 3. Obtener info, sinopsis, portada y lista de episodios de un anime
 app.get('/api/anime', async (req, res) => {
     const animeUrl = req.query.url;
     if (!animeUrl) {
@@ -121,8 +121,12 @@ app.get('/api/anime', async (req, res) => {
         const synopsis = $('body > div.container.my-3 > div > div.col-lg-9.col-md-8 > p.my-2.opacity-75').text().trim()
                          || $('.sinopsis p, .description, .entry-content p').text().trim();
         
-        // Portada / Cover
-        const cover = resolveUrl($('body > div.container.my-3 img, .anime-cover img, .poster img, .thumb img').attr('src') || $('body > div.container.my-3 img, .anime-cover img, .poster img, .thumb img').attr('data-src'));
+        // Portada exacta usando tu selector proporcionado
+        const $coverImg =$('body > div.container.my-3 > div > div.col-lg-3.col-md-4 > div > div > img');
+        const cover = resolveUrl(
+            $coverImg.attr('src') || $coverImg.attr('data-src') || 
+            $coverImg.attr('data-original') || $('.anime-cover img, .poster img, .thumb img').attr('src')
+        );
         
         const episodes = [];
         
