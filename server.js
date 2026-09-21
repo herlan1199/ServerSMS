@@ -58,10 +58,19 @@ app.get('/', (req, res) => {
 });
 
 app.post('/api/register', async (req, res) => {
+    // Imprimir en la consola de Render para depurar
+    console.log("--- NUEVA PETICIÓN DE REGISTRO ---");
+    console.log("Headers recibidos:", req.headers);
+    console.log("Body recibido (req.body):", req.body);
+
     const { username, deviceHash } = req.body;
 
     if (!username || !deviceHash) {
-        return res.status(400).json({ error: 'Faltan parámetros requeridos' });
+        console.log("Error: Faltan parámetros. username:", username, "| deviceHash:", deviceHash);
+        return res.status(400).json({ 
+            error: 'Faltan parámetros requeridos', 
+            recibido: req.body 
+        });
     }
 
     try {
