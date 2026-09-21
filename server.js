@@ -37,9 +37,9 @@ app.get('/api/recent', async (req, res) => {
             const $link =$card.find('a');
             const $img =$link.find('div.imgrec img, img').first();
             
-            const rawImage = $img.attr('data-src') || $img.attr('data-original') \vert{}\vert{}$img.attr('src');
+            const rawImage = $img.attr('data-src') || $img.attr('data-original') || $img.attr('src');
             const url = $link.attr('href');
-            const title = $link.find('div.info > h2').text().trim() \vert{}\vert{}$card.find('h2').text().trim() || 'Anime / Episodio sin título';
+            const title = $link.find('div.info > h2').text().trim() || $card.find('h2').text().trim() || 'Anime / Episodio sin título';
             const episode = $card.find('.episode-number, .badge, span').text().trim();
 
             if (url) {
@@ -74,10 +74,10 @@ app.get('/api/search', async (req, res) => {
             const $card =$(element);
             const $link =$card.find('a');
 
-            const title = $card.find('.title, h3, h4, .anime-title').text().trim() \vert{}\vert{}$link.attr('title') || '';
+            const title = $card.find('.title, h3, h4, .anime-title').text().trim() || $link.attr('title') || '';
             const url = $link.attr('href');
             const $img =$card.find('img').first();
-            const rawImage = $img.attr('data-src') || $img.attr('data-original') \vert{}\vert{}$img.attr('src');
+            const rawImage = $img.attr('data-src') || $img.attr('data-original') || $img.attr('src');
             const synopsis = $card.find('.description, p').text().trim();
 
             if (title && url) {
@@ -119,7 +119,7 @@ app.get('/api/anime', async (req, res) => {
         $('#chapters-list li, .episodios-list a').each((i, element) => {
             const $el =$(element);
             const epTitle = $el.text().trim();
-            const epUrl = $el.attr('href') \vert{}\vert{}$el.find('a').attr('href');
+            const epUrl = $el.attr('href') || $el.find('a').attr('href');
             
             if (epUrl) {
                 episodes.push({
@@ -154,8 +154,8 @@ app.get('/api/episode', async (req, res) => {
 
         $(serverSelector).each((i, element) => {
             const $el =$(element);
-            const base64Value = $el.attr('data-player') || $el.attr('data-video') \vert{}\vert{}$el.attr('data-url');
-            const serverName = $el.text().trim() \vert{}\vert{}$el.attr('data-name') || `Servidor ${i + 1}`;
+            const base64Value = $el.attr('data-player') || $el.attr('data-video') || $el.attr('data-url');
+            const serverName = $el.text().trim() || $el.attr('data-name') || `Servidor ${i + 1}`;
 
             if (base64Value) {
                 try {
