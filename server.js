@@ -28,7 +28,10 @@ const resolveUrl = (url) => {
 // 1. Añadidos recientemente
 app.get('/api/recent', async (req, res) => {
     try {
-        const { data } = await apiClient.get('/');
+        const page = parseInt(req.query.page) || 1;
+        const endpoint = page > 1 ? `/page/${page}/` : '/';
+        
+        const { data } = await apiClient.get(endpoint);
         const $ = cheerio.load(data);
         const recentEpisodes = [];
 
@@ -37,9 +40,9 @@ app.get('/api/recent', async (req, res) => {
             const $link =$card.find('a');
             const $img =$link.find('div.imgrec img, img').first();
             
-            const rawImage = $img.attr('data-src') || $img.attr('data-original') || $img.attr('src');
+            const rawImage = $img.attr('data-src') || $img.attr('data-original') \vert{}\vert{}$img.attr('src');
             const url = $link.attr('href');
-            const title = $link.find('div.info > h2').text().trim() || $card.find('h2').text().trim() || 'Anime / Episodio sin título';
+            const title = $link.find('div.info > h2').text().trim() \vert{}\vert{}$card.find('h2').text().trim() || 'Anime / Episodio sin título';
             const episode = $card.find('.episode-number, .badge, span').text().trim();
 
             if (url) {
@@ -74,10 +77,10 @@ app.get('/api/search', async (req, res) => {
             const $card =$(element);
             const $link =$card.find('a');
 
-            const title = $card.find('.title, h3, h4, .anime-title').text().trim() || $link.attr('title') || '';
+            const title = $card.find('.title, h3, h4, .anime-title').text().trim() \vert{}\vert{}$link.attr('title') || '';
             const url = $link.attr('href');
             const $img =$card.find('img').first();
-            const rawImage = $img.attr('data-src') || $img.attr('data-original') || $img.attr('src');
+            const rawImage = $img.attr('data-src') || $img.attr('data-original') \vert{}\vert{}$img.attr('src');
             const synopsis = $card.find('.description, p').text().trim();
 
             if (title && url) {
@@ -104,32 +107,72 @@ app.get('/api/anime', async (req, res) => {
     }
 
     try {
-        // Permitimos URLs absolutas si vienen de fuera, o relativas
         const targetUrl = animeUrl.startsWith('http') ? animeUrl : resolveUrl(animeUrl);
         const { data } = await axios.get(targetUrl, {
             headers: apiClient.defaults.headers
         });
         const $ = cheerio.load(data);
 
-        const title = $('.anime-title, h1').text().trim();
-        const synopsis = $('.sinopsis, .description').text().trim();
-        const cover = resolveUrl($('.anime-cover img, .poster img').attr('src'));
+        // Título exacto
+        const title = $('body > div.container.my-3 > div > div.col-lg-9.col-md-8 > h2').text().trim() 
+                      || $('h1.title, .anime-title, h1').first().text().trim();
+        
+        // Sinopsis exacta
+        const synopsis = $('body > div.container.my-3 > div > div.col-lg-9.col-md-8 > p.my-2.opacity-75').text().trim()
+                         || $('.sinopsis p, .description, .entry-content p').text().trim();
+        
+        // Portada / Cover
+        const cover = resolveUrl($('body > div.container.my-3 img, .anime-cover img, .poster img, .thumb img').attr('src') \vert{}\vert{}$('body > div.container.my-3 img, .anime-cover img, .poster img, .thumb img').attr('data-src'));
         
         const episodes = [];
-        $('#chapters-list li, .episodios-list a').each((i, element) => {
-            const $el =$(element);
-            const epTitle = $el.text().trim();
-            const epUrl = $el.attr('href') || $el.find('a').attr('href');
+        
+        // Extracción de la lista de episodios usando tu selector exacto para los contenedores
+        $('body > div.container.my-3 > div > div.col-lg-9.col-md-8 > div.row > div').each((i, element) => {
+            const $card =$(element);
+            const $link =$card.find('a');
+            
+            const epUrl = $link.attr('href') \vert{}\vert{}$card.attr('href');
+            const epTitle = $card.text().trim() \vert{}\vert{}$link.text().trim() || `Episodio ${i + 1}`;
             
             if (epUrl) {
-                episodes.push({
-                    title: epTitle,
-                    url: resolveUrl(epUrl)
-                });
+                const fullEpUrl = resolveUrl(epUrl);
+                if (!episodes.some(ep => ep.url === fullEpUrl)) {
+                    episodes.push({
+                        title: epTitle,
+                        url: fullEpUrl
+                    });
+                }
             }
         });
 
-        res.json({ success: true, data: { title, synopsis, cover, episodes } });
+        // Respaldo genérico por si algún anime usa otra estructura de capítulos
+        if (episodes.length === 0) {
+            $('#chapters-list li, .episodios-list a, .list-eps li a, ul.episodes-list li a').each((i, element) => {
+                const $el =$(element);
+                const epTitle = $el.text().trim();
+                const epUrl = $el.attr('href') \vert{}\vert{}$el.find('a').attr('href');
+                
+                if (epUrl) {
+                    const fullEpUrl = resolveUrl(epUrl);
+                    if (!episodes.some(ep => ep.url === fullEpUrl)) {
+                        episodes.push({
+                            title: epTitle || `Episodio ${i + 1}`,
+                            url: fullEpUrl
+                        });
+                    }
+                }
+            });
+        }
+
+        res.json({ 
+            success: true, 
+            data: { 
+                title: title || 'Sin título', 
+                synopsis: synopsis || 'Sin sinopsis disponible.', 
+                cover: cover || '', 
+                episodes 
+            } 
+        });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -154,8 +197,8 @@ app.get('/api/episode', async (req, res) => {
 
         $(serverSelector).each((i, element) => {
             const $el =$(element);
-            const base64Value = $el.attr('data-player') || $el.attr('data-video') || $el.attr('data-url');
-            const serverName = $el.text().trim() || $el.attr('data-name') || `Servidor ${i + 1}`;
+            const base64Value = $el.attr('data-player') || $el.attr('data-video') \vert{}\vert{}$el.attr('data-url');
+            const serverName = $el.text().trim() \vert{}\vert{}$el.attr('data-name') || `Servidor ${i + 1}`;
 
             if (base64Value) {
                 try {
