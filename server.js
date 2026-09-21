@@ -9,6 +9,10 @@ const app = express();
 const server = http.createServer(app);
 
 const io = new Server(server, {
+    cors: {
+        origin: "*", // Permite conexiones desde cualquier origen (puedes limitarlo si deseas)
+        methods: ["GET", "POST"]
+    },
     pingInterval: 10000,
     pingTimeout: 5000
 });
