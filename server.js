@@ -23,7 +23,7 @@ app.use(express.json());
 const JWT_SECRET = "tu_clave_secreta_super_segura";
 
 const pool = new Pool({
-    connectionString: 'postgresql://neondb_owner:npg_RjZUaWqb0tz4@ep-small-field-b4db0i6v-pooler.c-6.us-east-2.aws.neon.tech/test?sslmode=require&channel_binding=require',
+    connectionString: 'postgresql://neondb_owner:npg_RjZUaWqb0tz4@ep-purple-tree-b4vihs7n-pooler.c-6.us-east-2.aws.neon.tech/chatapp?sslmode=require&channel_binding=require',
     ssl: { rejectUnauthorized: false }
 });
 
