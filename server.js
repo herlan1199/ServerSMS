@@ -171,6 +171,7 @@ app.get('/api/anime', async (req, res) => {
             data: { 
                 title: title || 'Sin título', 
                 synopsis: synopsis || 'Sin sinopsis disponible.', 
+                image: cover || '', // Añadido para que coincida con detail.image en Kotlin
                 cover: cover || '', 
                 episodes 
             } 
