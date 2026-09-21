@@ -8,23 +8,21 @@ const cors = require('cors');
 const app = express();
 const server = http.createServer(app);
 
-// Configuración de Socket.io con parámetros de Heartbeat personalizados para desconexión rápida
 const io = new Server(server, {
-    pingInterval: 10000, // Cada 10 segundos el servidor comprueba la latencia
-    pingTimeout: 5000    // Si en 5 segundos no responde, se desconecta
+    pingInterval: 10000,
+    pingTimeout: 5000
 });
 
 app.use(cors());
 app.use(express.json());
 
-const JWT_SECRET = "tu_clave_secreta_super_segura"; // En producción usa variables de entorno (.env)
+const JWT_SECRET = "tu_clave_secreta_super_segura";
 
 const pool = new Pool({
     connectionString: 'postgresql://neondb_owner:npg_RjZUaWqb0tz4@ep-small-field-b4db0i6v-pooler.c-6.us-east-2.aws.neon.tech/test?sslmode=require&channel_binding=require',
     ssl: { rejectUnauthorized: false }
 });
 
-// Inicializar tablas en Neon PostgreSQL (Dispositivos + Historial de Mensajes)
 async function initDB() {
     try {
         await pool.query(`
@@ -51,12 +49,10 @@ async function initDB() {
 
 initDB();
 
-// Ruta raíz para el Splash Screen de la app
 app.get('/', (req, res) => {
     res.status(200).send("Servidor SMS Activo 🚀");
 });
 
-// Endpoint de Registro / Autenticación que genera un JWT
 app.post('/api/register', async (req, res) => {
     const { username, deviceHash } = req.body;
 
@@ -74,7 +70,6 @@ app.post('/api/register', async (req, res) => {
         `;
         await pool.query(query, [username, deviceHash]);
 
-        // Generar Token JWT para autorizar las conexiones WebSocket y peticiones
         const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '30d' });
 
         res.status(200).json({ 
@@ -88,7 +83,6 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-// Middleware de Socket.io para autenticar con JWT
 io.use((socket, next) => {
     const token = socket.handshake.auth.token;
     if (!token) {
@@ -101,7 +95,7 @@ io.use((socket, next) => {
     });
 });
 
-const onlineUsers = new Map(); // socketId -> username
+const onlineUsers = new Map();
 
 io.on('connection', (socket) => {
     const username = socket.username;
@@ -109,7 +103,6 @@ io.on('connection', (socket) => {
     io.emit('update_user_list', Array.from(new Set(onlineUsers.values())));
     console.log(`[Conectado y Autenticado] ${username} (${socket.id})`);
 
-    // Cargar historial de mensajes privados entre dos usuarios
     socket.on('get_chat_history', async ({ recipient }) => {
         try {
             const query = `
@@ -125,16 +118,13 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Manejo de mensajes privados con persistencia en Neon
     socket.on('private_message', async ({ recipientUsername, message }) => {
         try {
-            // Guardar en la base de datos PostgreSQL
             await pool.query(
                 `INSERT INTO messages (sender, recipient, message) VALUES ($1, $2, $3)`,
                 [username, recipientUsername, message]
             );
 
-            // Enviar al destinatario si está online
             for (let [sId, uName] of onlineUsers.entries()) {
                 if (uName === recipientUsername) {
                     io.to(sId).emit('receive_private_message', { senderUsername: username, message });
@@ -146,7 +136,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Indicador de "Escribiendo..."
     socket.on('typing', ({ recipientUsername, isTyping }) => {
         for (let [sId, uName] of onlineUsers.entries()) {
             if (uName === recipientUsername) {
