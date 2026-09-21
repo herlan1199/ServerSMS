@@ -1,7 +1,7 @@
-import express, { Request, Response } from 'express';
-import axios from 'axios';
-import * as cheerio from 'cheerio';
-import cors from 'cors';
+const express = require('express');
+const axios = require('axios');
+const cheerio = require('cheerio');
+const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -11,7 +11,7 @@ app.use(cors());
 app.use(express.json());
 
 // 1. Añadidos recientemente
-app.get('/api/recent', async (req: Request, res: Response): Promise<void> => {
+app.get('/api/recent', async (req, res) => {
     try {
         const { data } = await axios.get(BASE_URL, {
             headers: {
@@ -19,7 +19,7 @@ app.get('/api/recent', async (req: Request, res: Response): Promise<void> => {
             }
         });
         const $ = cheerio.load(data);
-        const recentEpisodes: any[] = [];
+        const recentEpisodes = [];
 
         $('body > div.container > div.row > div').each((i, element) => {
             const $card =$(element);
@@ -29,8 +29,7 @@ app.get('/api/recent', async (req: Request, res: Response): Promise<void> => {
 
             const image = rawImage?.startsWith('http') ? rawImage : (rawImage ? `${BASE_URL}${rawImage}` : '');
             const url = $link.attr('href');
-            //const image = $link.find('div.imgrec img').attr('src') || $card.find('img').attr('src');
-            const title = $link.find('div.info > h2').text().trim() || $card.find('h2').text().trim() || '';
+            const title = $link.find('div.info > h2').text().trim() ||$card.find('h2').text().trim() || '';
             const episode = $card.find('.episode-number, .badge, span').text().trim();
 
             if (url) {
@@ -44,14 +43,14 @@ app.get('/api/recent', async (req: Request, res: Response): Promise<void> => {
         });
 
         res.json({ success: true, data: recentEpisodes });
-    } catch (error: any) {
+    } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
 // 2. Realizar búsquedas
-app.get('/api/search', async (req: Request, res: Response): Promise<void> => {
-    const query = req.query.q as string;
+app.get('/api/search', async (req, res) => {
+    const query = req.query.q;
     if (!query) {
         res.status(400).json({ success: false, error: 'Falta el parámetro de búsqueda "q"' });
         return;
@@ -65,9 +64,8 @@ app.get('/api/search', async (req: Request, res: Response): Promise<void> => {
             }
         });
         const $ = cheerio.load(data);
-        const results: any[] = [];
+        const results = [];
 
-        // Selector corregido basado en la estructura que compartiste
         $('body > div.container > div.row > div').each((i, element) => {
             const $card =$(element);
             const $link =$card.find('a');
@@ -75,7 +73,6 @@ app.get('/api/search', async (req: Request, res: Response): Promise<void> => {
             const title = $card.find('.title, h3, h4, .anime-title').text().trim() || $link.attr('title') || '';
             const url = $link.attr('href');
             
-            // Extracción de imagen con soporte para lazy loading
             const $img =$card.find('img');
             const rawImage = $img.attr('data-src') || $img.attr('data-original') || $img.attr('src');
             
@@ -92,14 +89,14 @@ app.get('/api/search', async (req: Request, res: Response): Promise<void> => {
         });
 
         res.json({ success: true, data: results });
-    } catch (error: any) {
+    } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
 // 3. Obtener info, sinopsis y lista de episodios de un anime
-app.get('/api/anime', async (req: Request, res: Response): Promise<void> => {
-    const animeUrl = req.query.url as string;
+app.get('/api/anime', async (req, res) => {
+    const animeUrl = req.query.url;
     if (!animeUrl) {
         res.status(400).json({ success: false, error: 'Falta la URL del anime' });
         return;
@@ -117,7 +114,7 @@ app.get('/api/anime', async (req: Request, res: Response): Promise<void> => {
         const synopsis = $('.sinopsis, .description').text().trim();
         const cover = $('.anime-cover img, .poster img').attr('src');
         
-        const episodes: any[] = [];
+        const episodes = [];
         
         $('#chapters-list li, .episodios-list a').each((i, element) => {
             const epTitle = $(element).text().trim();
@@ -131,12 +128,70 @@ app.get('/api/anime', async (req: Request, res: Response): Promise<void> => {
         });
 
         res.json({ success: true, data: { title, synopsis, cover, episodes } });
-    } catch (error: any) {
+    } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
+// 4. Obtener todos los servidores del episodio (con el filtro y data-player)
+app.get('/api/episode', async (req, res) => {
+    const episodeUrl = req.query.url;
+    if (!episodeUrl) {
+        res.status(400).json({ success: false, error: 'Falta la URL del episodio' });
+        return;
+    }
 
+    try {
+        const { data } = await axios.get(episodeUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
+        const $ = cheerio.load(data);
+        const servers = [];
+
+        const serverSelector = 'body > div.container-fluid > div > div > div.col-12.col-lg-8.seiya > ul > li a, body > div.container-fluid > div > div > div.col-12.col-lg-8.seiya > ul > a';
+
+        $(serverSelector).each((i, element) => {
+            const $el =$(element);
+            
+            const base64Value = $el.attr('data-player') || $el.attr('data-video') || $el.attr('data-url');
+            const serverName = $el.text().trim() || $el.attr('data-name') || `Servidor ${i + 1}`;
+
+            if (base64Value) {
+                try {
+                    let decodedUrl = base64Value;
+                    if (!base64Value.startsWith('http')) {
+                        decodedUrl = Buffer.from(base64Value, 'base64').toString('utf-8');
+                    }
+
+                    if (decodedUrl.startsWith('http')) {
+                        servers.push({
+                            name: serverName,
+                            type: 'iframe',
+                            url: decodedUrl
+                        });
+                    }
+                } catch (e) {
+                    // Ignorar errores de decodificación
+                }
+            }
+        });
+
+        const blockedServers = ['mixdrop', 'hexload', 'savefiles', 'byse', 'mega'];
+
+        const filteredServers = servers.filter(server => {
+            return !blockedServers.some(blocked => 
+                server.url.toLowerCase().includes(blocked) || 
+                server.name.toLowerCase().includes(blocked)
+            );
+        });
+
+        res.json({ success: true, data: { episodeUrl, servers: filteredServers } });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 app.listen(PORT, () => {
     console.log(`API corriendo en http://localhost:${PORT}`);
