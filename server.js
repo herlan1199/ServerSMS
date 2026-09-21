@@ -14,6 +14,7 @@ const io = new Server(server, {
     pingTimeout: 5000    // Si en 5 segundos no responde, se desconecta
 });
 
+app.use(cors());
 app.use(express.json());
 
 const JWT_SECRET = "tu_clave_secreta_super_segura"; // En producción usa variables de entorno (.env)
