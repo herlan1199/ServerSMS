@@ -10,33 +10,43 @@ const BASE_URL = 'https://latanime.org';
 app.use(cors());
 app.use(express.json());
 
+// Instancia de Axios optimizada con User-Agent por defecto y timeout
+const apiClient = axios.create({
+    baseURL: BASE_URL,
+    timeout: 10000,
+    headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+});
+
+// Función auxiliar para resolver URLs relativas
+const resolveUrl = (url) => {
+    if (!url) return '';
+    return url.startsWith('http') ? url : `${BASE_URL}${url}`;
+};
+
 // 1. Añadidos recientemente
 app.get('/api/recent', async (req, res) => {
     try {
-        const { data } = await axios.get(BASE_URL, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-        });
+        const { data } = await apiClient.get('/');
         const $ = cheerio.load(data);
         const recentEpisodes = [];
 
         $('body > div.container > div.row > div').each((i, element) => {
             const $card =$(element);
             const $link =$card.find('a');
-            const $img =$link.find('div.imgrec img');
-            const rawImage = $img.attr('data-src') || $img.attr('data-original') || $img.attr('src') || $card.find('img').attr('data-src') || $card.find('img').attr('src');
-
-            const image = rawImage?.startsWith('http') ? rawImage : (rawImage ? `${BASE_URL}${rawImage}` : '');
+            const $img =$link.find('div.imgrec img, img').first();
+            
+            const rawImage = $img.attr('data-src') || $img.attr('data-original') \vert{}\vert{}$img.attr('src');
             const url = $link.attr('href');
-            const title = $link.find('div.info > h2').text().trim() ||$card.find('h2').text().trim() || '';
+            const title = $link.find('div.info > h2').text().trim() \vert{}\vert{}$card.find('h2').text().trim() || 'Anime / Episodio sin título';
             const episode = $card.find('.episode-number, .badge, span').text().trim();
 
             if (url) {
                 recentEpisodes.push({
-                    title: title || 'Anime / Episodio sin título',
-                    url: url.startsWith('http') ? url : `${BASE_URL}${url}`,
-                    image: image?.startsWith('http') ? image : (image ? `${BASE_URL}${image}` : ''),
+                    title,
+                    url: resolveUrl(url),
+                    image: resolveUrl(rawImage),
                     episode
                 });
             }
@@ -52,17 +62,11 @@ app.get('/api/recent', async (req, res) => {
 app.get('/api/search', async (req, res) => {
     const query = req.query.q;
     if (!query) {
-        res.status(400).json({ success: false, error: 'Falta el parámetro de búsqueda "q"' });
-        return;
+        return res.status(400).json({ success: false, error: 'Falta el parámetro de búsqueda "q"' });
     }
 
     try {
-        const searchUrl = `${BASE_URL}/buscar?q=${encodeURIComponent(query)}`;
-        const { data } = await axios.get(searchUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-        });
+        const { data } = await apiClient.get(`/buscar?q=${encodeURIComponent(query)}`);
         const $ = cheerio.load(data);
         const results = [];
 
@@ -70,19 +74,17 @@ app.get('/api/search', async (req, res) => {
             const $card =$(element);
             const $link =$card.find('a');
 
-            const title = $card.find('.title, h3, h4, .anime-title').text().trim() || $link.attr('title') || '';
+            const title = $card.find('.title, h3, h4, .anime-title').text().trim() \vert{}\vert{}$link.attr('title') || '';
             const url = $link.attr('href');
-            
-            const $img =$card.find('img');
-            const rawImage = $img.attr('data-src') || $img.attr('data-original') || $img.attr('src');
-            
+            const $img =$card.find('img').first();
+            const rawImage = $img.attr('data-src') || $img.attr('data-original') \vert{}\vert{}$img.attr('src');
             const synopsis = $card.find('.description, p').text().trim();
 
             if (title && url) {
                 results.push({
                     title,
-                    url: url.startsWith('http') ? url : `${BASE_URL}${url}`,
-                    image: rawImage?.startsWith('http') ? rawImage : (rawImage ? `${BASE_URL}${rawImage}` : ''),
+                    url: resolveUrl(url),
+                    image: resolveUrl(rawImage),
                     synopsis
                 });
             }
@@ -98,31 +100,31 @@ app.get('/api/search', async (req, res) => {
 app.get('/api/anime', async (req, res) => {
     const animeUrl = req.query.url;
     if (!animeUrl) {
-        res.status(400).json({ success: false, error: 'Falta la URL del anime' });
-        return;
+        return res.status(400).json({ success: false, error: 'Falta la URL del anime' });
     }
 
     try {
-        const { data } = await axios.get(animeUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
+        // Permitimos URLs absolutas si vienen de fuera, o relativas
+        const targetUrl = animeUrl.startsWith('http') ? animeUrl : resolveUrl(animeUrl);
+        const { data } = await axios.get(targetUrl, {
+            headers: apiClient.defaults.headers
         });
         const $ = cheerio.load(data);
 
         const title = $('.anime-title, h1').text().trim();
         const synopsis = $('.sinopsis, .description').text().trim();
-        const cover = $('.anime-cover img, .poster img').attr('src');
+        const cover = resolveUrl($('.anime-cover img, .poster img').attr('src'));
         
         const episodes = [];
-        
         $('#chapters-list li, .episodios-list a').each((i, element) => {
-            const epTitle = $(element).text().trim();
-            const epUrl = $(element).attr('href') || $(element).find('a').attr('href');
+            const $el =$(element);
+            const epTitle = $el.text().trim();
+            const epUrl = $el.attr('href') \vert{}\vert{}$el.find('a').attr('href');
+            
             if (epUrl) {
                 episodes.push({
                     title: epTitle,
-                    url: epUrl.startsWith('http') ? epUrl : `${BASE_URL}${epUrl}`
+                    url: resolveUrl(epUrl)
                 });
             }
         });
@@ -133,19 +135,17 @@ app.get('/api/anime', async (req, res) => {
     }
 });
 
-// 4. Obtener todos los servidores del episodio (con el filtro y data-player)
+// 4. Obtener todos los servidores del episodio
 app.get('/api/episode', async (req, res) => {
     const episodeUrl = req.query.url;
     if (!episodeUrl) {
-        res.status(400).json({ success: false, error: 'Falta la URL del episodio' });
-        return;
+        return res.status(400).json({ success: false, error: 'Falta la URL del episodio' });
     }
 
     try {
-        const { data } = await axios.get(episodeUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
+        const targetUrl = episodeUrl.startsWith('http') ? episodeUrl : resolveUrl(episodeUrl);
+        const { data } = await axios.get(targetUrl, {
+            headers: apiClient.defaults.headers
         });
         const $ = cheerio.load(data);
         const servers = [];
@@ -154,9 +154,8 @@ app.get('/api/episode', async (req, res) => {
 
         $(serverSelector).each((i, element) => {
             const $el =$(element);
-            
-            const base64Value = $el.attr('data-player') || $el.attr('data-video') || $el.attr('data-url');
-            const serverName = $el.text().trim() || $el.attr('data-name') || `Servidor ${i + 1}`;
+            const base64Value = $el.attr('data-player') || $el.attr('data-video') \vert{}\vert{}$el.attr('data-url');
+            const serverName = $el.text().trim() \vert{}\vert{}$el.attr('data-name') || `Servidor ${i + 1}`;
 
             if (base64Value) {
                 try {
@@ -173,18 +172,16 @@ app.get('/api/episode', async (req, res) => {
                         });
                     }
                 } catch (e) {
-                    // Ignorar errores de decodificación
+                    // Ignorar errores de decodificación Base64 inválida
                 }
             }
         });
 
         const blockedServers = ['mixdrop', 'hexload', 'savefiles', 'byse', 'mega'];
-
         const filteredServers = servers.filter(server => {
-            return !blockedServers.some(blocked => 
-                server.url.toLowerCase().includes(blocked) || 
-                server.name.toLowerCase().includes(blocked)
-            );
+            const lowerUrl = server.url.toLowerCase();
+            const lowerName = server.name.toLowerCase();
+            return !blockedServers.some(blocked => lowerUrl.includes(blocked) || lowerName.includes(blocked));
         });
 
         res.json({ success: true, data: { episodeUrl, servers: filteredServers } });
