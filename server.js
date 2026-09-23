@@ -26,6 +26,7 @@ const resolveUrl = (url) => {
 };
 
 // Función auxiliar para extraer el enlace directo del .mp4 y comprobar si el servidor está activo o caído
+// Función auxiliar para extraer el enlace directo del .mp4 y comprobar si el servidor está activo o caído
 const resolveAndCheckUrl = async (server) => {
     try {
         let directUrl = server.url;
@@ -37,7 +38,7 @@ const resolveAndCheckUrl = async (server) => {
             const match = data.match(regex);
             
             if (match && match[1]) {
-                return match[1]; // Retorna la URL directa del .mp4 extraída
+                directUrl = match[1]; // Actualizamos la URL al .mp4 directo, pero seguimos el flujo
             }
         }
 
@@ -47,7 +48,7 @@ const resolveAndCheckUrl = async (server) => {
             headers: apiClient.defaults.headers 
         });
 
-        // Si responde correctamente, devolvemos el estado 'active'
+        // Si responde correctamente, devolvemos el objeto con la URL directa y estado 'active'
         return {
             ...server,
             url: directUrl,
@@ -55,7 +56,7 @@ const resolveAndCheckUrl = async (server) => {
         };
     } catch (e) {
         console.error(`❌ Servidor caído o inaccesible: ${server.url} -> ${e.message}`);
-        // Si falla o da error, devolvemos el estado 'dead'
+        // Si falla o da error, devolvemos el estado 'dead' manteniendo la estructura
         return {
             ...server,
             status: 'dead'
