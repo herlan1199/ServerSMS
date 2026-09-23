@@ -25,6 +25,29 @@ const resolveUrl = (url) => {
     return url.startsWith('http') ? url : `${BASE_URL}${url}`;
 };
 
+// Función auxiliar para extraer el enlace directo del .mp4 según el servicio (ej. Mp4upload)
+const resolveDirectUrl = async (embedUrl) => {
+    try {
+        if (embedUrl.includes('mp4upload.com')) {
+            const { data } = await apiClient.get(embedUrl);
+            
+            // Expresión regular para capturar la URL del archivo .mp4 dentro de player.src({...})
+            const regex = /src:\s*"([^"]+\.mp4)"/;
+            const match = data.match(regex);
+            
+            if (match && match[1]) {
+                return match[1]; // Retorna la URL directa del .mp4 extraída
+            }
+        }
+        
+        // Si es otro servidor o no se encuentra el enlace directo, devuelve el embed original
+        return embedUrl;
+    } catch (e) {
+        console.error(`Error resolviendo URL directa para ${embedUrl}:`, e.message);
+        return embedUrl;
+    }
+};
+
 // 1. Añadidos recientemente
 app.get('/api/recent', async (req, res) => {
     try {
@@ -40,9 +63,9 @@ app.get('/api/recent', async (req, res) => {
             const $link =$card.find('a');
             const $img =$link.find('div.imgrec img, img').first();
             
-            const rawImage = $img.attr('data-src') || $img.attr('data-original') || $img.attr('src');
+            const rawImage = $img.attr('data-src') || $img.attr('data-original') \vert{}\vert{}$img.attr('src');
             const url = $link.attr('href');
-            const title = $link.find('div.info > h2').text().trim() || $card.find('h2').text().trim() || 'Anime / Episodio sin título';
+            const title = $link.find('div.info > h2').text().trim() \vert{}\vert{}$card.find('h2').text().trim() || 'Anime / Episodio sin título';
             const episode = $card.find('.episode-number, .badge, span').text().trim();
 
             if (url) {
@@ -77,10 +100,10 @@ app.get('/api/search', async (req, res) => {
             const $card =$(element);
             const $link =$card.find('a');
 
-            const title = $card.find('.title, h3, h4, .anime-title').text().trim() || $link.attr('title') || '';
+            const title = $card.find('.title, h3, h4, .anime-title').text().trim() \vert{}\vert{}$link.attr('title') || '';
             const url = $link.attr('href');
             const $img =$card.find('img').first();
-            const rawImage = $img.attr('data-src') || $img.attr('data-original') || $img.attr('src');
+            const rawImage = $img.attr('data-src') || $img.attr('data-original') \vert{}\vert{}$img.attr('src');
             const synopsis = $card.find('.description, p').text().trim();
 
             if (title && url) {
@@ -113,28 +136,24 @@ app.get('/api/anime', async (req, res) => {
         });
         const $ = cheerio.load(data);
 
-        // Título exacto
         const title = $('body > div.container.my-3 > div > div.col-lg-9.col-md-8 > h2').text().trim() 
-                      || $('h1.title, .anime-title, h1').first().text().trim();
+                    || $('h1.title, .anime-title, h1').first().text().trim();
         
-        // Sinopsis exacta
         const synopsis = $('body > div.container.my-3 > div > div.col-lg-9.col-md-8 > p.my-2.opacity-75').text().trim()
-                         || $('.sinopsis p, .description, .entry-content p').text().trim();
+                       || $('.sinopsis p, .description, .entry-content p').text().trim();
         
-        // Portada exacta usando tu selector proporcionado
         const $coverImg =$('body > div.container.my-3 > div > div.col-lg-3.col-md-4 > div > div > img');
         const cover = resolveUrl(
-            $coverImg.attr('src') || $coverImg.attr('data-src') || 
-            $coverImg.attr('data-original') || $('.anime-cover img, .poster img, .thumb img').attr('src')
+            $coverImg.attr('src') \vert{}\vert{}$coverImg.attr('data-src') || 
+            $coverImg.attr('data-original') \vert{}\vert{}$('.anime-cover img, .poster img, .thumb img').attr('src')
         );
         
         const episodes = [];
         
-        // Extracción de la lista de episodios apuntando directamente a cada enlace de la fila
         $('body > div.container.my-3 > div > div.col-lg-9.col-md-8 > div.row a').each((i, element) => {
             const $el =$(element);
             const epUrl = $el.attr('href');
-            const epTitle = $el.text().trim() || $el.find('.title, h4, span').text().trim() || `Episodio ${i + 1}`;
+            const epTitle = $el.text().trim() \vert{}\vert{}$el.find('.title, h4, span').text().trim() || `Episodio ${i + 1}`;
             
             if (epUrl) {
                 const fullEpUrl = resolveUrl(epUrl);
@@ -147,12 +166,11 @@ app.get('/api/anime', async (req, res) => {
             }
         });
 
-        // Respaldo genérico por si algún anime usa otra estructura de capítulos
         if (episodes.length === 0) {
             $('#chapters-list li, .episodios-list a, .list-eps li a, ul.episodes-list li a').each((i, element) => {
                 const $el =$(element);
                 const epTitle = $el.text().trim();
-                const epUrl = $el.attr('href') || $el.find('a').attr('href');
+                const epUrl = $el.attr('href') \vert{}\vert{}$el.find('a').attr('href');
                 
                 if (epUrl) {
                     const fullEpUrl = resolveUrl(epUrl);
@@ -171,7 +189,7 @@ app.get('/api/anime', async (req, res) => {
             data: { 
                 title: title || 'Sin título', 
                 synopsis: synopsis || 'Sin sinopsis disponible.', 
-                image: cover || '', // Añadido para que coincida con detail.image en Kotlin
+                image: cover || '', 
                 cover: cover || '', 
                 episodes 
             } 
@@ -181,7 +199,7 @@ app.get('/api/anime', async (req, res) => {
     }
 });
 
-// 4. Obtener todos los servidores del episodio
+// 4. Obtener todos los servidores del episodio y extraer URLs directas en segundo plano
 app.get('/api/episode', async (req, res) => {
     const episodeUrl = req.query.url;
     if (!episodeUrl) {
@@ -200,8 +218,8 @@ app.get('/api/episode', async (req, res) => {
 
         $(serverSelector).each((i, element) => {
             const $el =$(element);
-            const base64Value = $el.attr('data-player') || $el.attr('data-video') || $el.attr('data-url');
-            const serverName = $el.text().trim() || $el.attr('data-name') || `Servidor ${i + 1}`;
+            const base64Value = $el.attr('data-player') || $el.attr('data-video') \vert{}\vert{}$el.attr('data-url');
+            const serverName = $el.text().trim() \vert{}\vert{}$el.attr('data-name') || `Servidor ${i + 1}`;
 
             if (base64Value) {
                 try {
@@ -218,13 +236,23 @@ app.get('/api/episode', async (req, res) => {
                         });
                     }
                 } catch (e) {
-                    // Ignorar errores de decodificación Base64 inválida
+                    // Ignorar errores de Base64
                 }
             }
         });
 
+        // Resolver las URLs directas (como el .mp4 de mp4upload) en segundo plano de forma concurrente
+        const resolvedServers = await Promise.all(servers.map(async (server) => {
+            const directVideoUrl = await resolveDirectUrl(server.url);
+            return {
+                ...server,
+                url: directVideoUrl
+            };
+        }));
+
+        // Filtrar servidores bloqueados
         const blockedServers = ['mixdrop', 'hexload', 'savefiles', 'byse', 'mega'];
-        const filteredServers = servers.filter(server => {
+        const filteredServers = resolvedServers.filter(server => {
             const lowerUrl = server.url.toLowerCase();
             const lowerName = server.name.toLowerCase();
             return !blockedServers.some(blocked => lowerUrl.includes(blocked) || lowerName.includes(blocked));
