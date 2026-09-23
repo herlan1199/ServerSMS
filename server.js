@@ -37,7 +37,7 @@ const resolveAndCheckUrl = async (server) => {
             const match = data.match(regex);
             
             if (match && match[1]) {
-                directUrl = match[1];
+                return match[1]; // Retorna la URL directa del .mp4 extraída
             }
         }
 
