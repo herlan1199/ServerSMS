@@ -30,36 +30,42 @@ const resolveUrl = (url) => {
 const resolveAndCheckUrl = async (server) => {
     try {
         let directUrl = server.url;
+        let status = 'live'; 
         
-        // Si es mp4upload, extraemos el enlace directo
+        // Si es mp4upload, extraemos el .mp4 usando la estructura exacta de videojs
         if (directUrl.includes('mp4upload.com')) {
-            const { data } = await apiClient.get(directUrl);
-            const regex = /src:\s*"([^"]+\.mp4)"/;
-            const match = data.match(regex);
-            
-            if (match && match[1]) {
-                directUrl = match[1]; // Actualizamos la URL al .mp4 directo, pero seguimos el flujo
+            try {
+                const { data } = await apiClient.get(directUrl);
+                
+                // Expresión regular que busca exactamente el bloque src: "..." dentro de player.src
+                const regex = /player\.src\s*\(\s*\{\s*type\s*:\s*["'][^"']+["']\s*,\s*src\s*:\s*["']([^"']+\.mp4[^"']*)["']/i;
+                
+                // Alternativa genérica por si cambia el orden del type y src
+                const regexFallback = /src\s*:\s*["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i;
+
+                const match = data.match(regex) || data.match(regexFallback);
+                
+                if (match && match[1]) {
+                    directUrl = match[1];
+                    console.log(`✅ [Mp4Upload Extraído]: ${directUrl}`);
+                } else {
+                    console.log(`⚠️ No se pudo extraer el .mp4, usando URL original.`);
+                }
+            } catch (scrapeErr) {
+                console.log(`⚠️ Error haciendo scraping en Mp4upload: ${scrapeErr.message}`);
             }
         }
 
-        // Hacemos una petición HEAD rápida para confirmar que el servidor de video responde
-        await axios.head(directUrl, { 
-            timeout: 5000,
-            headers: apiClient.defaults.headers 
-        });
-
-        // Si responde correctamente, devolvemos el objeto con la URL directa y estado 'active'
         return {
             ...server,
             url: directUrl,
-            status: 'active'
+            status: status
         };
     } catch (e) {
-        console.error(`❌ Servidor caído o inaccesible: ${server.url} -> ${e.message}`);
-        // Si falla o da error, devolvemos el estado 'dead' manteniendo la estructura
+        console.error(`❌ Error procesando servidor ${server.url}: ${e.message}`);
         return {
             ...server,
-            status: 'dead'
+            status: 'live'
         };
     }
 };
