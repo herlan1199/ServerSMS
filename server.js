@@ -30,29 +30,29 @@ const resolveUrl = (url) => {
 const resolveAndCheckUrl = async (server) => {
     try {
         let directUrl = server.url;
-        let status = 'live'; 
+        let status = 'active'; // Por defecto activo para servidores normales
         
-        // Si es mp4upload, extraemos el .mp4 usando la estructura exacta de videojs
+        // Si es mp4upload, intentamos extraer el enlace directo
         if (directUrl.includes('mp4upload.com')) {
             try {
                 const { data } = await apiClient.get(directUrl);
                 
-                // Expresión regular que busca exactamente el bloque src: "..." dentro de player.src
                 const regex = /player\.src\s*\(\s*\{\s*type\s*:\s*["'][^"']+["']\s*,\s*src\s*:\s*["']([^"']+\.mp4[^"']*)["']/i;
-                
-                // Alternativa genérica por si cambia el orden del type y src
                 const regexFallback = /src\s*:\s*["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i;
 
                 const match = data.match(regex) || data.match(regexFallback);
                 
                 if (match && match[1]) {
                     directUrl = match[1];
+                    status = 'active'; // ¡Lo logró! Queda activo
                     console.log(`✅ [Mp4Upload Extraído]: ${directUrl}`);
                 } else {
-                    console.log(`⚠️ No se pudo extraer el .mp4, usando URL original.`);
+                    status = 'dead'; // No encontró el enlace
+                    console.log(`❌ [Mp4Upload]: No se pudo extraer la URL directa, marcado como dead.`);
                 }
             } catch (scrapeErr) {
-                console.log(`⚠️ Error haciendo scraping en Mp4upload: ${scrapeErr.message}`);
+                status = 'dead'; // Error de red o scraping
+                console.log(`❌ [Mp4Upload Error]: ${scrapeErr.message}`);
             }
         }
 
@@ -62,10 +62,10 @@ const resolveAndCheckUrl = async (server) => {
             status: status
         };
     } catch (e) {
-        console.error(`❌ Error procesando servidor ${server.url}: ${e.message}`);
+        console.error(`❌ Error general procesando servidor ${server.url}: ${e.message}`);
         return {
             ...server,
-            status: 'live'
+            status: 'dead'
         };
     }
 };
