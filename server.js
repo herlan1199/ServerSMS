@@ -30,9 +30,10 @@ const resolveUrl = (url) => {
 const resolveAndCheckUrl = async (server) => {
     try {
         let directUrl = server.url;
-        let status = 'active'; // Por defecto activo para servidores normales
+        let status = 'active'; 
+        let customHeaders = {}; // Objeto para guardar las cabeceras específicas si las necesita
         
-        // Si es mp4upload, intentamos extraer el enlace directo
+        // Si es mp4upload, intentamos extraer el enlace directo y añadimos las cabeceras
         if (directUrl.includes('mp4upload.com')) {
             try {
                 const { data } = await apiClient.get(directUrl);
@@ -44,14 +45,21 @@ const resolveAndCheckUrl = async (server) => {
                 
                 if (match && match[1]) {
                     directUrl = match[1];
-                    status = 'active'; // ¡Lo logró! Queda activo
-                    console.log(`✅ [Mp4Upload Extraído]: ${directUrl}`);
+                    status = 'active';
+                    
+                    // Asignamos las cabeceras obligatorias que exige mp4upload para reproducir el video
+                    customHeaders = {
+                        "Referer": "https://www.mp4upload.com/",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    };
+                    
+                    console.log(`✅ [Mp4Upload Extraído con Headers]: ${directUrl}`);
                 } else {
-                    status = 'dead'; // No encontró el enlace
+                    status = 'dead';
                     console.log(`❌ [Mp4Upload]: No se pudo extraer la URL directa, marcado como dead.`);
                 }
             } catch (scrapeErr) {
-                status = 'dead'; // Error de red o scraping
+                status = 'dead';
                 console.log(`❌ [Mp4Upload Error]: ${scrapeErr.message}`);
             }
         }
@@ -59,7 +67,8 @@ const resolveAndCheckUrl = async (server) => {
         return {
             ...server,
             url: directUrl,
-            status: status
+            status: status,
+            headers: customHeaders // Enviamos las cabeceras en la respuesta JSON hacia Android
         };
     } catch (e) {
         console.error(`❌ Error general procesando servidor ${server.url}: ${e.message}`);
