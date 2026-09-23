@@ -25,26 +25,41 @@ const resolveUrl = (url) => {
     return url.startsWith('http') ? url : `${BASE_URL}${url}`;
 };
 
-// Función auxiliar para extraer el enlace directo del .mp4 según el servicio (ej. Mp4upload)
-const resolveDirectUrl = async (embedUrl) => {
+// Función auxiliar para extraer el enlace directo del .mp4 y comprobar si el servidor está activo o caído
+const resolveAndCheckUrl = async (server) => {
     try {
-        if (embedUrl.includes('mp4upload.com')) {
-            const { data } = await apiClient.get(embedUrl);
-            
-            // Expresión regular para capturar la URL del archivo .mp4 dentro de player.src({...})
+        let directUrl = server.url;
+        
+        // Si es mp4upload, extraemos el enlace directo
+        if (directUrl.includes('mp4upload.com')) {
+            const { data } = await apiClient.get(directUrl);
             const regex = /src:\s*"([^"]+\.mp4)"/;
             const match = data.match(regex);
             
             if (match && match[1]) {
-                return match[1]; // Retorna la URL directa del .mp4 extraída
+                directUrl = match[1];
             }
         }
-        
-        // Si es otro servidor o no se encuentra el enlace directo, devuelve el embed original
-        return embedUrl;
+
+        // Hacemos una petición HEAD rápida para confirmar que el servidor de video responde
+        await axios.head(directUrl, { 
+            timeout: 5000,
+            headers: apiClient.defaults.headers 
+        });
+
+        // Si responde correctamente, devolvemos el estado 'active'
+        return {
+            ...server,
+            url: directUrl,
+            status: 'active'
+        };
     } catch (e) {
-        console.error(`Error resolviendo URL directa para ${embedUrl}:`, e.message);
-        return embedUrl;
+        console.error(`❌ Servidor caído o inaccesible: ${server.url} -> ${e.message}`);
+        // Si falla o da error, devolvemos el estado 'dead'
+        return {
+            ...server,
+            status: 'dead'
+        };
     }
 };
 
@@ -199,7 +214,7 @@ app.get('/api/anime', async (req, res) => {
     }
 });
 
-// 4. Obtener todos los servidores del episodio y extraer URLs directas en segundo plano
+// 4. Obtener todos los servidores del episodio, extraer URLs y verificar su estado en segundo plano
 app.get('/api/episode', async (req, res) => {
     const episodeUrl = req.query.url;
     if (!episodeUrl) {
@@ -241,14 +256,8 @@ app.get('/api/episode', async (req, res) => {
             }
         });
 
-        // Resolver las URLs directas (como el .mp4 de mp4upload) en segundo plano de forma concurrente
-        const resolvedServers = await Promise.all(servers.map(async (server) => {
-            const directVideoUrl = await resolveDirectUrl(server.url);
-            return {
-                ...server,
-                url: directVideoUrl
-            };
-        }));
+        // Resolver URLs directas y verificar estados de forma concurrente
+        const resolvedServers = await Promise.all(servers.map(server => resolveAndCheckUrl(server)));
 
         // Filtrar servidores bloqueados
         const blockedServers = ['mixdrop', 'hexload', 'savefiles', 'byse', 'mega'];
