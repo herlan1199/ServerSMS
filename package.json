@@ -1,14 +1,23 @@
 {
-  "name": "animelatam-api",
+  "name": "bisnes-ocr-server",
   "version": "1.0.0",
+  "description": "Servidor backend minimalista para validación y conciliación de pagos",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node --watch server.js"
   },
   "dependencies": {
-    "axios": "^1.6.0",
-    "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
-  }
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "keywords": [
+    "ocr",
+    "websockets",
+    "conciliacion",
+    "express"
+  ],
+  "author": "Herlan Ávila Peña",
+  "license": "MIT"
 }
