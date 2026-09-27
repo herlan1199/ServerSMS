@@ -1,294 +1,129 @@
 const express = require('express');
-const axios = require('axios');
-const cheerio = require('cheerio');
+const http = require('http');
+const { Server } = require('socket.io');
 const cors = require('cors');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const BASE_URL = 'https://latanime.org';
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: { origin: "*" }
+});
 
 app.use(cors());
 app.use(express.json());
 
-// Instancia de Axios optimizada con User-Agent por defecto y timeout
-const apiClient = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
-});
-
-// Función auxiliar para resolver URLs relativas
-const resolveUrl = (url) => {
-    if (!url) return '';
-    return url.startsWith('http') ? url : `${BASE_URL}${url}`;
+// Estructura de estado global con control de estatus
+let state = {
+    clientSubmission: null, // { amount, reference, date, status: 'pending'|'approved'|'rejected', reason? }
+    adminSubmission: null,  // { amount, reference, date }
+    globalStatus: 'waiting' // 'waiting', 'pending_review', 'approved', 'rejected'
 };
 
-// Función auxiliar para extraer el enlace directo del .mp4 y comprobar si el servidor está activo o caído
-// Función auxiliar para extraer el enlace directo del .mp4 y comprobar si el servidor está activo o caído
-const resolveAndCheckUrl = async (server) => {
-    try {
-        let directUrl = server.url;
-        let status = 'active'; 
-        let customHeaders = {}; // Objeto para guardar las cabeceras específicas si las necesita
-        
-        // Si es mp4upload, intentamos extraer el enlace directo y añadimos las cabeceras
-        if (directUrl.includes('mp4upload.com')) {
-            try {
-                const { data } = await apiClient.get(directUrl);
-                
-                const regex = /player\.src\s*\(\s*\{\s*type\s*:\s*["'][^"']+["']\s*,\s*src\s*:\s*["']([^"']+\.mp4[^"']*)["']/i;
-                const regexFallback = /src\s*:\s*["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i;
+// Función de validación cruzada automática
+function evaluateConciliation() {
+    if (!state.clientSubmission || !state.adminSubmission) return;
 
-                const match = data.match(regex) || data.match(regexFallback);
-                
-                if (match && match[1]) {
-                    directUrl = match[1];
-                    status = 'active';
-                    
-                    // Asignamos las cabeceras obligatorias que exige mp4upload para reproducir el video
-                    customHeaders = {
-                        "Referer": "https://www.mp4upload.com/",
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                    };
-                    
-                    console.log(`✅ [Mp4Upload Extraído con Headers]: ${directUrl}`);
-                } else {
-                    status = 'dead';
-                    console.log(`❌ [Mp4Upload]: No se pudo extraer la URL directa, marcado como dead.`);
-                }
-            } catch (scrapeErr) {
-                status = 'dead';
-                console.log(`❌ [Mp4Upload Error]: ${scrapeErr.message}`);
-            }
-        }
+    const c = state.clientSubmission;
+    const a = state.adminSubmission;
 
-        return {
-            ...server,
-            url: directUrl,
-            status: status,
-            headers: customHeaders // Enviamos las cabeceras en la respuesta JSON hacia Android
-        };
-    } catch (e) {
-        console.error(`❌ Error general procesando servidor ${server.url}: ${e.message}`);
-        return {
-            ...server,
-            status: 'dead'
-        };
+    const amountMatch = Math.abs(c.amount - a.amount) < 0.01;
+    const refMatch = c.reference.toLowerCase() === a.reference.toLowerCase() && c.reference !== "NO_ENCONTRADA";
+
+    if (amountMatch && refMatch) {
+        // Coincidencia exacta: Se aprueba automáticamente o pasa a visto bueno
+        state.clientSubmission.status = 'approved';
+        state.globalStatus = 'approved';
+    } else {
+        // Discrepancia: Queda pendiente de revisión manual o se rechaza con causa
+        state.clientSubmission.status = 'rejected';
+        state.clientSubmission.reason = 'Discrepancia detectada en monto o número de referencia bancaria.';
+        state.globalStatus = 'rejected';
     }
-};
 
-// 1. Añadidos recientemente
-app.get('/api/recent', async (req, res) => {
-    try {
-        const page = parseInt(req.query.page) || 1;
-        const endpoint = page > 1 ? `/page/${page}/` : '/';
-        
-        const { data } = await apiClient.get(endpoint);
-        const $ = cheerio.load(data);
-        const recentEpisodes = [];
+    io.emit('status_update', state);
+}
 
-        $('body > div.container > div.row > div').each((i, element) => {
-            const $card =$(element);
-            const $link =$card.find('a');
-            const $img =$link.find('div.imgrec img, img').first();
-            
-            const rawImage = $img.attr('data-src') || $img.attr('data-original') || $img.attr('src');
-            const url = $link.attr('href');
-            const title = $link.find('div.info > h2').text().trim() || $card.find('h2').text().trim() || 'Anime / Episodio sin título';
-            const episode = $card.find('.episode-number, .badge, span').text().trim();
+// 1. Recibir datos del Cliente (Kotlin) -> Queda en estado PENDIENTE
+app.post('/api/client/upload-data', (req, res) => {
+    const { amount, reference, date, rawText } = req.body;
 
-            if (url) {
-                recentEpisodes.push({
-                    title,
-                    url: resolveUrl(url),
-                    image: resolveUrl(rawImage),
-                    episode
-                });
-            }
-        });
+    state.clientSubmission = {
+        amount: amount || 0,
+        reference: reference || 'NO_ENCONTRADA',
+        date: date || 'N/A',
+        rawText: rawText || '',
+        status: 'pending', // <-- Estado inicial: Pendiente de aprobación
+        timestamp: new Date()
+    };
+    state.globalStatus = state.adminSubmission ? 'reviewing' : 'pending_client';
 
-        res.json({ success: true, data: recentEpisodes });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+    console.log('[Servidor] Cliente envió pago. Estado: PENDIENTE');
+    io.emit('status_update', state);
+
+    // Si el admin ya había subido su reporte, evaluamos automáticamente
+    if (state.adminSubmission) {
+        evaluateConciliation();
     }
+
+    res.json({ success: true, status: 'pending', message: 'Comprobante recibido y en revisión.' });
 });
 
-// 2. Realizar búsquedas
-app.get('/api/search', async (req, res) => {
-    const query = req.query.q;
-    if (!query) {
-        return res.status(400).json({ success: false, error: 'Falta el parámetro de búsqueda "q"' });
+// 2. Recibir datos del Administrador / Reporte Oficial
+app.post('/api/admin/upload-data', (req, res) => {
+    const { amount, reference, date } = req.body;
+
+    state.adminSubmission = {
+        amount: amount || 0,
+        reference: reference || 'NO_ENCONTRADA',
+        date: date || 'N/A',
+        timestamp: new Date()
+    };
+
+    console.log('[Servidor] Admin cargó reporte oficial.');
+    
+    if (state.clientSubmission) {
+        evaluateConciliation();
+    } else {
+        io.emit('status_update', state);
     }
 
-    try {
-        const { data } = await apiClient.get(`/buscar?q=${encodeURIComponent(query)}`);
-        const $ = cheerio.load(data);
-        const results = [];
-
-        $('body > div.container > div.row > div').each((i, element) => {
-            const $card =$(element);
-            const $link =$card.find('a');
-
-            const title = $card.find('.title, h3, h4, .anime-title').text().trim() || $link.attr('title') || '';
-            const url = $link.attr('href');
-            const $img =$card.find('img').first();
-            const rawImage = $img.attr('data-src') || $img.attr('data-original') || $img.attr('src');
-            const synopsis = $card.find('.description, p').text().trim();
-
-            if (title && url) {
-                results.push({
-                    title,
-                    url: resolveUrl(url),
-                    image: resolveUrl(rawImage),
-                    synopsis
-                });
-            }
-        });
-
-        res.json({ success: true, data: results });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
+    res.json({ success: true, message: 'Reporte de admin registrado.' });
 });
 
-// 3. Obtener info, sinopsis, portada y lista de episodios de un anime
-app.get('/api/anime', async (req, res) => {
-    const animeUrl = req.query.url;
-    if (!animeUrl) {
-        return res.status(400).json({ success: false, error: 'Falta la URL del anime' });
+// 3. Endpoint para que el Admin apruebe o rechace manualmente con causa
+app.post('/api/admin/review', (req, res) => {
+    const { action, reason } = req.body; // action: 'approve' o 'reject'
+
+    if (!state.clientSubmission) {
+        return res.status(400).json({ error: 'No hay transacción pendiente de cliente.' });
     }
 
-    try {
-        const targetUrl = animeUrl.startsWith('http') ? animeUrl : resolveUrl(animeUrl);
-        const { data } = await axios.get(targetUrl, {
-            headers: apiClient.defaults.headers
-        });
-        const $ = cheerio.load(data);
-
-        const title = $('body > div.container.my-3 > div > div.col-lg-9.col-md-8 > h2').text().trim() 
-                    || $('h1.title, .anime-title, h1').first().text().trim();
-        
-        const synopsis = $('body > div.container.my-3 > div > div.col-lg-9.col-md-8 > p.my-2.opacity-75').text().trim()
-                       || $('.sinopsis p, .description, .entry-content p').text().trim();
-        
-        const $coverImg =$('body > div.container.my-3 > div > div.col-lg-3.col-md-4 > div > div > img');
-        const cover = resolveUrl(
-            $coverImg.attr('src') || $coverImg.attr('data-src') || 
-            $coverImg.attr('data-original') || $('.anime-cover img, .poster img, .thumb img').attr('src')
-        );
-        
-        const episodes = [];
-        
-        $('body > div.container.my-3 > div > div.col-lg-9.col-md-8 > div.row a').each((i, element) => {
-            const $el =$(element);
-            const epUrl = $el.attr('href');
-            const epTitle = $el.text().trim() || $el.find('.title, h4, span').text().trim() || `Episodio ${i + 1}`;
-            
-            if (epUrl) {
-                const fullEpUrl = resolveUrl(epUrl);
-                if (!episodes.some(ep => ep.url === fullEpUrl)) {
-                    episodes.push({
-                        title: epTitle,
-                        url: fullEpUrl
-                    });
-                }
-            }
-        });
-
-        if (episodes.length === 0) {
-            $('#chapters-list li, .episodios-list a, .list-eps li a, ul.episodes-list li a').each((i, element) => {
-                const $el =$(element);
-                const epTitle = $el.text().trim();
-                const epUrl = $el.attr('href') || $el.find('a').attr('href');
-                
-                if (epUrl) {
-                    const fullEpUrl = resolveUrl(epUrl);
-                    if (!episodes.some(ep => ep.url === fullEpUrl)) {
-                        episodes.push({
-                            title: epTitle || `Episodio ${i + 1}`,
-                            url: fullEpUrl
-                        });
-                    }
-                }
-            });
-        }
-
-        res.json({ 
-            success: true, 
-            data: { 
-                title: title || 'Sin título', 
-                synopsis: synopsis || 'Sin sinopsis disponible.', 
-                image: cover || '', 
-                cover: cover || '', 
-                episodes 
-            } 
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+    if (action === 'approve') {
+        state.clientSubmission.status = 'approved';
+        delete state.clientSubmission.reason;
+        state.globalStatus = 'approved';
+    } else if (action === 'reject') {
+        state.clientSubmission.status = 'rejected';
+        state.clientSubmission.reason = reason || 'Rechazado por el administrador sin especificar causa.';
+        state.globalStatus = 'rejected';
     }
+
+    io.emit('status_update', state);
+    res.json({ success: true, state });
 });
 
-// 4. Obtener todos los servidores del episodio, extraer URLs y verificar su estado en segundo plano
-app.get('/api/episode', async (req, res) => {
-    const episodeUrl = req.query.url;
-    if (!episodeUrl) {
-        return res.status(400).json({ success: false, error: 'Falta la URL del episodio' });
-    }
-
-    try {
-        const targetUrl = episodeUrl.startsWith('http') ? episodeUrl : resolveUrl(episodeUrl);
-        const { data } = await axios.get(targetUrl, {
-            headers: apiClient.defaults.headers
-        });
-        const $ = cheerio.load(data);
-        const servers = [];
-
-        const serverSelector = 'body > div.container-fluid > div > div > div.col-12.col-lg-8.seiya > ul > li a, body > div.container-fluid > div > div > div.col-12.col-lg-8.seiya > ul > a';
-
-        $(serverSelector).each((i, element) => {
-            const $el =$(element);
-            const base64Value = $el.attr('data-player') || $el.attr('data-video') || $el.attr('data-url');
-            const serverName = $el.text().trim() || $el.attr('data-name') || `Servidor ${i + 1}`;
-
-            if (base64Value) {
-                try {
-                    let decodedUrl = base64Value;
-                    if (!base64Value.startsWith('http')) {
-                        decodedUrl = Buffer.from(base64Value, 'base64').toString('utf-8');
-                    }
-
-                    if (decodedUrl.startsWith('http')) {
-                        servers.push({
-                            name: serverName,
-                            type: 'iframe',
-                            url: decodedUrl
-                        });
-                    }
-                } catch (e) {
-                    // Ignorar errores de Base64
-                }
-            }
-        });
-
-        // Resolver URLs directas y verificar estados de forma concurrente
-        const resolvedServers = await Promise.all(servers.map(server => resolveAndCheckUrl(server)));
-
-        // Filtrar servidores bloqueados
-        const blockedServers = ['mixdrop', 'hexload', 'savefiles', 'byse', 'mega'];
-        const filteredServers = resolvedServers.filter(server => {
-            const lowerUrl = server.url.toLowerCase();
-            const lowerName = server.name.toLowerCase();
-            return !blockedServers.some(blocked => lowerUrl.includes(blocked) || lowerName.includes(blocked));
-        });
-
-        res.json({ success: true, data: { episodeUrl, servers: filteredServers } });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
+// 4. Reiniciar sistema
+app.post('/api/reset', (req, res) => {
+    state = { clientSubmission: null, adminSubmission: null, globalStatus: 'waiting' };
+    io.emit('status_update', state);
+    res.json({ success: true });
 });
 
-app.listen(PORT, () => {
-    console.log(`API corriendo en http://localhost:${PORT}`);
+io.on('connection', (socket) => {
+    socket.emit('status_update', state);
+});
+
+const PORT = 3000;
+server.listen(PORT, () => {
+    console.log(`Servidor de validación activo en http://localhost:${PORT}`);
 });
