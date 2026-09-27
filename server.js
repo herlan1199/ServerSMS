@@ -12,118 +12,117 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
-// Estructura de estado global con control de estatus
-let state = {
-    clientSubmission: null, // { amount, reference, date, status: 'pending'|'approved'|'rejected', reason? }
+// Estado global del sistema en memoria
+let systemState = {
+    clientSubmission: null, // { amount, reference, date, beneficiary }
     adminSubmission: null,  // { amount, reference, date }
-    globalStatus: 'waiting' // 'waiting', 'pending_review', 'approved', 'rejected'
+    status: 'pending',      // 'pending', 'approved', 'rejected'
+    reason: ''
 };
 
-// Función de validación cruzada automática
-function evaluateConciliation() {
-    if (!state.clientSubmission || !state.adminSubmission) return;
-
-    const c = state.clientSubmission;
-    const a = state.adminSubmission;
-
-    const amountMatch = Math.abs(c.amount - a.amount) < 0.01;
-    const refMatch = c.reference.toLowerCase() === a.reference.toLowerCase() && c.reference !== "NO_ENCONTRADA";
-
-    if (amountMatch && refMatch) {
-        // Coincidencia exacta: Se aprueba automáticamente o pasa a visto bueno
-        state.clientSubmission.status = 'approved';
-        state.globalStatus = 'approved';
-    } else {
-        // Discrepancia: Queda pendiente de revisión manual o se rechaza con causa
-        state.clientSubmission.status = 'rejected';
-        state.clientSubmission.reason = 'Discrepancia detectada en monto o número de referencia bancaria.';
-        state.globalStatus = 'rejected';
-    }
-
-    io.emit('status_update', state);
-}
-
-// 1. Recibir datos del Cliente (Kotlin) -> Queda en estado PENDIENTE
+// 1. Recibe el texto estructurado (JSON) enviado por el cliente móvil
 app.post('/api/client/upload-data', (req, res) => {
-    const { amount, reference, date, rawText } = req.body;
-
-    state.clientSubmission = {
-        amount: amount || 0,
-        reference: reference || 'NO_ENCONTRADA',
+    const { amount, reference, date, beneficiary } = req.body;
+    
+    systemState.clientSubmission = {
+        amount,
+        reference,
         date: date || 'N/A',
-        rawText: rawText || '',
-        status: 'pending', // <-- Estado inicial: Pendiente de aprobación
-        timestamp: new Date()
+        beneficiary: beneficiary || 'N/A',
+        status: 'pending'
     };
-    state.globalStatus = state.adminSubmission ? 'reviewing' : 'pending_client';
+    systemState.status = 'pending';
+    systemState.reason = '';
 
-    console.log('[Servidor] Cliente envió pago. Estado: PENDIENTE');
-    io.emit('status_update', state);
-
-    // Si el admin ya había subido su reporte, evaluamos automáticamente
-    if (state.adminSubmission) {
+    // Si ya el admin había cargado su texto antes, comparamos de inmediato
+    if (systemState.adminSubmission) {
         evaluateConciliation();
     }
 
-    res.json({ success: true, status: 'pending', message: 'Comprobante recibido y en revisión.' });
+    io.emit('status_update', systemState);
+    res.json({ success: true, message: 'Datos de cliente recibidos' });
 });
 
-// 2. Recibir datos del Administrador / Reporte Oficial
+// 2. Recibe el texto estructurado (JSON) extraído por la web del administrador
 app.post('/api/admin/upload-data', (req, res) => {
     const { amount, reference, date } = req.body;
 
-    state.adminSubmission = {
-        amount: amount || 0,
-        reference: reference || 'NO_ENCONTRADA',
-        date: date || 'N/A',
-        timestamp: new Date()
+    systemState.adminSubmission = {
+        amount,
+        reference,
+        date: date || 'N/A'
     };
 
-    console.log('[Servidor] Admin cargó reporte oficial.');
-    
-    if (state.clientSubmission) {
+    // Ejecutar comparación automática si el cliente ya envió su texto
+    if (systemState.clientSubmission) {
         evaluateConciliation();
     } else {
-        io.emit('status_update', state);
+        systemState.status = 'pending';
     }
 
-    res.json({ success: true, message: 'Reporte de admin registrado.' });
+    io.emit('status_update', systemState);
+    res.json({ success: true, message: 'Reporte oficial registrado' });
 });
 
-// 3. Endpoint para que el Admin apruebe o rechace manualmente con causa
-app.post('/api/admin/review', (req, res) => {
-    const { action, reason } = req.body; // action: 'approve' o 'reject'
+// 3. Función auxiliar para comparar textos y decidir aprobación o rechazo
+function evaluateConciliation() {
+    const client = systemState.clientSubmission;
+    const admin = systemState.adminSubmission;
 
-    if (!state.clientSubmission) {
-        return res.status(400).json({ error: 'No hay transacción pendiente de cliente.' });
+    if (!client || !admin) return;
+
+    const clientAmt = parseFloat(client.amount);
+    const adminAmt = parseFloat(admin.amount);
+    const clientRef = String(client.reference).trim().toUpperCase();
+    const adminRef = String(admin.reference).trim().toUpperCase();
+
+    // Verificación estricta de Monto y Referencia
+    if (clientAmt === adminAmt && clientRef === adminRef && clientRef !== 'NO_ENCONTRADA') {
+        systemState.status = 'approved';
+        client.status = 'approved';
+        systemState.reason = '';
+    } else {
+        systemState.status = 'rejected';
+        client.status = 'rejected';
+        systemState.reason = 'Discrepancia en el monto o número de referencia bancaria.';
     }
+}
+
+// 4. Revisión manual por parte del admin (forzar aprobar o rechazar)
+app.post('/api/admin/review', (req, res) => {
+    const { action, reason } = req.body; // 'approve' | 'reject'
 
     if (action === 'approve') {
-        state.clientSubmission.status = 'approved';
-        delete state.clientSubmission.reason;
-        state.globalStatus = 'approved';
+        systemState.status = 'approved';
+        if (systemState.clientSubmission) systemState.clientSubmission.status = 'approved';
+        systemState.reason = '';
     } else if (action === 'reject') {
-        state.clientSubmission.status = 'rejected';
-        state.clientSubmission.reason = reason || 'Rechazado por el administrador sin especificar causa.';
-        state.globalStatus = 'rejected';
+        systemState.status = 'rejected';
+        if (systemState.clientSubmission) systemState.clientSubmission.status = 'rejected';
+        systemState.reason = reason || 'Rechazado manualmente.';
     }
 
-    io.emit('status_update', state);
-    res.json({ success: true, state });
+    io.emit('status_update', systemState);
+    res.json({ success: true, state: systemState });
 });
 
-// 4. Reiniciar sistema
+// 5. Reiniciar sistema
 app.post('/api/reset', (req, res) => {
-    state = { clientSubmission: null, adminSubmission: null, globalStatus: 'waiting' };
-    io.emit('status_update', state);
-    res.json({ success: true });
+    systemState = {
+        clientSubmission: null,
+        adminSubmission: null,
+        status: 'pending',
+        reason: ''
+    };
+    io.emit('status_update', systemState);
+    res.json({ success: true, message: 'Sistema reiniciado' });
 });
 
 io.on('connection', (socket) => {
-    socket.emit('status_update', state);
+    socket.emit('status_update', systemState);
 });
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`Servidor de validación activo en http://localhost:${PORT}`);
+    console.log(`Servidor de comparación corriendo en puerto ${PORT}`);
 });
