@@ -1,23 +1,12 @@
 {
-  "name": "bisnes-ocr-server",
+  "name": "goblin-warriors-server",
   "version": "1.0.0",
-  "description": "Servidor backend minimalista para validación y conciliación de pagos",
   "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
-  },
+  "scripts": { "start": "node server.js" },
   "dependencies": {
-    "cors": "^2.8.5",
     "express": "^4.19.2",
-    "socket.io": "^4.7.5"
-  },
-  "keywords": [
-    "ocr",
-    "websockets",
-    "conciliacion",
-    "express"
-  ],
-  "author": "Herlan Ávila Peña",
-  "license": "MIT"
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
+    "uuid": "^10.0.0"
+  }
 }
