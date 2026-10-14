@@ -1,21 +1,14 @@
-const nodemailer = require('nodemailer');
-require('dotenv').config();
+// src/email.js
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD,
-    },
-});
+async function sendVerificationEmail(to, code) {
+  await resend.emails.send({
+    from: 'Goblin Warriors <noreply@tudominio.com>',
+    to,
+    subject: 'Código de verificación',
+    html: `<p>Tu código es: <b>${code}</b></p>`
+  });
+}
 
-// Verificar conexión al arrancar (opcional, útil para debug)
-transporter.verify((error) => {
-    if (error) {
-        console.error('❌ Error configurando email:', error.message);
-    } else {
-        console.log('✅ Servidor de email listo');
-    }
-});
-
-module.exports = transporter;
+module.exports = { sendVerificationEmail };
