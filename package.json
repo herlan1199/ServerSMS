@@ -1,24 +1,39 @@
 {
   "name": "goblin-warriors-server",
   "version": "2.0.0",
+  "description": "Servidor backend para Goblin Warriors: juego de estrategia con economía de tokens virtuales",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "migrate": "node src/db/migrate.js"
+    "migrate": "node src/db/migrate.js",
+    "cleanup-otp": "node scripts/cleanup-otp.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "jsonwebtoken": "^9.0.2",
     "bcryptjs": "^2.4.3",
-    "uuid": "^10.0.0",
-    "pg": "^8.12.0",
-    "express-rate-limit": "^7.4.0",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
     "helmet": "^7.1.0",
-    "cors": "^2.8.5"
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.9.15",
+    "pg": "^8.12.0",
+    "uuid": "^10.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"
-  }
+  },
+  "keywords": [
+    "game",
+    "backend",
+    "nodejs",
+    "postgres",
+    "jwt"
+  ],
+  "author": "Tu Nombre",
+  "license": "MIT"
 }
