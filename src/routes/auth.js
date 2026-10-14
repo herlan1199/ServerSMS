@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { v4: uuid } = require('uuid');
 const pool = require('../db/pool');
 const config = require('../config');
-const transporter = require('../email');
+const { sendVerificationEmail } = require('../email');
 const {
     generateAccessToken,
     generateRefreshToken,
@@ -45,9 +45,9 @@ router.post('/send-verification', async (req, res) => {
 
     const client = await pool.connect();
     try {
-        // 1. Verificar si el email ya está registrado
+        // 1. Verificar si el email ya está registrado (como username o email)
         const exists = await client.query(
-            'SELECT 1 FROM users WHERE username = $1',
+            'SELECT 1 FROM users WHERE username = $1 OR email = $1',
             [email]
         );
         if (exists.rowCount > 0) {
@@ -82,24 +82,8 @@ router.post('/send-verification', async (req, res) => {
             [uuid(), email, codeHash, expiresAt]
         );
 
-        // 5. Enviar email
-        await transporter.sendMail({
-            from: `"Goblin Warriors" <${process.env.EMAIL_USER}>`,
-            to: email,
-            subject: 'Tu código de verificación',
-            html: `
-                <div style="font-family: Arial, sans-serif; background:#1A0B2E; color:#F5F5F5; padding:32px; border-radius:12px;">
-                    <h2 style="color:#FFD700; margin-top:0;">Goblin Warriors</h2>
-                    <p>Tu código de verificación es:</p>
-                    <p style="font-size:36px; font-weight:bold; color:#FFD700; letter-spacing:8px; margin:20px 0;">
-                        ${code}
-                    </p>
-                    <p style="color:#B0B0B0; font-size:14px;">
-                        Expira en ${OTP_TTL_MINUTES} minutos. Si no solicitaste esto, ignora este correo.
-                    </p>
-                </div>
-            `,
-        });
+        // 5. Enviar email vía Resend
+        await sendVerificationEmail(email, code);
 
         res.json({ success: true, message: 'Código enviado' });
     } catch (e) {
